@@ -1,1 +1,132 @@
+name: Auto-renew-katabump
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 3 */3 * *' # 每隔3天11:30点(UTC 3:30) 运行
 
+jobs:
+  Renew-katabump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: 📥 下载代码
+        uses: actions/checkout@v6
+      - name: ⚙ 设置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          
+      - name: 🛠️ 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            x11-utils \
+            xdotool \
+            scrot \
+            fonts-noto-cjk
+            
+      - name: 🐍 安装 Python 依赖
+        run: |
+          pip install seleniumbase aiohttp requests
+          seleniumbase install chromedriver
+
+      - name: 🛠️ 安装并启动 sing-box 代理 (可选)
+        env:
+          NODE_LINK: ${{ secrets.NODE_LINK }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$NODE_LINK" ]; then
+            echo "ℹ️ 未配置 NODE_LINK Secret，将使用 GitHub Actions 本地网络直连。"
+            echo "USE_PROXY=false" >> $GITHUB_ENV
+          else
+            echo "📥 获取 sing-box 最新版本..."
+            API_RESP=$(curl -sf -H "Authorization: token ${GH_TOKEN}" \
+              https://api.github.com/repos/SagerNet/sing-box/releases/latest)
+            if [ -z "$API_RESP" ]; then
+              echo "❌ GitHub API 请求失败（可能被限流）"
+              exit 1
+            fi
+            # 提取版本号（自动去除 tag 开头的 v）
+            SINGBOX_VER=$(echo "$API_RESP" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p')
+            if [ -z "$SINGBOX_VER" ]; then
+              echo "❌ 无法解析版本号，API 响应："
+              echo "$API_RESP" | head -10
+              exit 1
+            fi
+            echo "  最新版本: ${SINGBOX_VER}"
+
+            TARBALL="sing-box-${SINGBOX_VER}-linux-amd64.tar.gz"
+            DL_URL="https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VER}/${TARBALL}"
+            echo "  下载: ${DL_URL}"
+            curl -fLo sing-box.tar.gz "$DL_URL"
+
+            # 校验下载文件是否为有效 gzip
+            if ! file sing-box.tar.gz | grep -q gzip; then
+              echo "❌ 下载文件不是有效的压缩包："
+              file sing-box.tar.gz
+              head -5 sing-box.tar.gz
+              exit 1
+            fi
+
+            tar -xzf sing-box.tar.gz
+            cp "sing-box-${SINGBOX_VER}-linux-amd64/sing-box" ./sing-box
+            chmod +x ./sing-box
+            ./sing-box version
+
+            echo "📝 转换节点链接为 sing-box 配置..."
+            python3 convert.py "$NODE_LINK"
+
+            echo "🚀 启动 sing-box..."
+            nohup ./sing-box run -c config.json > sing-box.log 2>&1 &
+            SINGBOX_PID=$!
+            sleep 5
+
+            echo "🔍 验证代理连通性..."
+            if curl -x http://127.0.0.1:8080 -s --max-time 10 https://api.ip.sb/ip; then
+              echo ""
+              echo "✅ sing-box 代理启动成功 (PID: $SINGBOX_PID)"
+              echo "USE_PROXY=true" >> $GITHUB_ENV
+            else
+              echo ""
+              echo "❌ 代理连通性测试失败，sing-box 日志："
+              cat sing-box.log
+              exit 1
+            fi
+          fi
+          
+      - name: 🚀 运行续期脚本
+        env:
+          KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
+          KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
+            python3 app.py
+            
+      # - name: 📸 上传调试截图
+      #   if: always()
+      #   uses: actions/upload-artifact@v6
+      #   with:
+      #     name: debug-screenshots
+      #     path: "*.png"
+      #     retention-days: 3
+          
+      - name: 🧹 清理旧的工作流运行记录
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 获取当前工作流的所有运行记录，保留最近 1 条，删除其余
+          runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
+          count=0
+          for run_id in $runs; do
+            count=$((count + 1))
+            if [ $count -gt 1 ]; then
+              echo "删除运行记录: $run_id"
+              gh run delete $run_id || true
+            fi
+          done 
