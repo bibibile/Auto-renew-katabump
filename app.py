@@ -29,8 +29,8 @@ def send_tg_message(status_icon, status_text, time_left=""):
     # 邮箱脱敏：保留用户名前2位和后2位，中间用****代替
     if '@' in EMAIL:
         name, domain = EMAIL.split('@', 1)
-        if len(name) > 4:
-            masked_email = f"{name[:2]}****{name[-2:]}@{domain}"
+        if len(name) > 2:
+            masked_email = f"{name[:1]}****{name[-1:]}@{domain}"
         else:
             masked_email = f"{name}@{domain}"
     else:
