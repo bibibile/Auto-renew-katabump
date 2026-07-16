@@ -636,7 +636,7 @@ def renew_server(sb):
     _check_renew_result(sb)
 
 
-#  脚本执行入口 (可选代理)
+#  脚本执行入口 (已对代理输出做脱敏处理)
 def main():
     print("#" * 25)
     print("   katabump 自动登录续期")
@@ -646,8 +646,9 @@ def main():
     sb_kwargs = {"uc": True, "headless": False}
     
     if use_proxy:
+        # 本地代理配置，在代码中保持可用，但在控制台输出中隐藏真实 IP 端口
         proxy_str = "http://127.0.0.1:8080"
-        print(f"🔗 挂载 SING_BOX 代理: {proxy_str}")
+        print("🔗 挂载代理: http://<local-proxy-ip>:<port>")
         sb_kwargs["proxy"] = proxy_str
     else:
         print("🌐 未使用代理，直连访问")
@@ -656,7 +657,15 @@ def main():
         # print("✅ 浏览器已启动")
         try:
             sb.open("https://api.ip.sb/ip")
-            print(f"🌐 当前出口真实IP: {sb.get_text('body')}")
+            # 出口 IP 有可能是本地宽带 IP 或代理服务器 IP，同样进行脱敏，避免泄露
+            raw_ip = sb.get_text('body').strip()
+            # 简单将 IP 替换为隐藏格式（如 123.xxx.xxx.xxx）
+            if raw_ip and '.' in raw_ip:
+                ip_parts = raw_ip.split('.')
+                masked_ip = f"{ip_parts[0]}.xxx.xxx.{ip_parts[-1]}"
+            else:
+                masked_ip = "<hidden-ip>"
+            print(f"🌐 当前出口真实IP: {masked_ip}")
         except Exception:
             pass
 
