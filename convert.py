@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""将代理分享链接 (vless:// hysteria2:// tuic:// socks://) 转换为 sing-box 配置文件"""
+"""将代理分享链接 (vless:// hysteria2:// tuic:// socks://) 转换为 sing-box 配置文件 (安全脱敏版)"""
 
 import json
 import sys
@@ -186,38 +186,21 @@ def parse_link(link: str) -> dict:
     )
 
 
+# ── 安全脱敏打印工具 ────────────────────────────────────
+def mask_ip(ip: str) -> str:
+    """对 IP 地址进行脱敏。如果是 IPv4 地址，则显示如 38.xxx.xxx.137 的格式；若非，则返回 ***"""
+    if not ip:
+        return "***"
+    parts = ip.split('.')
+    if len(parts) == 4:
+        return f"{parts[0]}.xxx.xxx.{parts[-1]}"
+    return "xxx.xxx.xxx.xxx"
+
+
 def main():
     if len(sys.argv) < 2:
         print("用法: python3 convert.py <分享链接>")
         print("示例: python3 convert.py 'vless://uuid@server:443?type=ws&security=tls&...'")
         sys.exit(1)
 
-    link = sys.argv[1].strip()
-    print(f"🔗 解析链接: {link[:60]}{'...' if len(link) > 60 else ''}")
-
-    outbound = parse_link(link)
-    print(f"   协议: {outbound['type']}")
-    print(f"   服务器: {outbound['server']}:{outbound['server_port']}")
-
-    config = {
-        "log": {"level": "warn"},
-        "inbounds": [INBOUND],
-        "outbounds": [
-            outbound,
-            {"type": "direct", "tag": "direct"}
-        ],
-        "route": {
-            "rules": [
-                {"ip_is_private": True, "outbound": "direct"}
-            ]
-        }
-    }
-
-    with open("config.json", "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
-
-    print("   配置已写入 config.json")
-
-
-if __name__ == "__main__":
-    main()
+    link
