@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""将代理分享链接 (vless:// hysteria2:// tuic:// socks://) 转换为 sing-box 配置文件 (安全脱敏版)"""
+"""将代理分享链接 (vless:// hysteria2:// tuic:// socks://) 转换为 sing-box 配置文件 (安全脱敏诊断版)"""
 
 import json
 import sys
 import urllib.parse
+
+# 强制让所有 print 语句实时刷新，防止 GitHub Actions 缓存日志
+print("=== 🛠️ DEBUG: convert.py 脚本已成功启动 ===", flush=True)
 
 INBOUND = {
     "type": "http",
@@ -188,7 +191,6 @@ def parse_link(link: str) -> dict:
 
 # ── 安全脱敏打印工具 ────────────────────────────────────
 def mask_ip(ip: str) -> str:
-    """对 IP 地址进行脱敏。如果是 IPv4 地址，则显示如 38.xxx.xxx.137 的格式；若非，则返回 ***"""
     if not ip:
         return "***"
     parts = ip.split('.')
@@ -199,8 +201,49 @@ def mask_ip(ip: str) -> str:
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python3 convert.py <分享链接>")
-        print("示例: python3 convert.py 'vless://uuid@server:443?type=ws&security=tls&...'")
+        print("❌ 错误: 未传入节点链接参数！", flush=True)
         sys.exit(1)
 
-    link
+    link = sys.argv[1].strip()
+    if not link:
+        print("❌ 错误: 传入的链接为空字符串！", flush=True)
+        sys.exit(1)
+    
+    u = urllib.parse.urlparse(link)
+    scheme = u.scheme if u.scheme else "unknown"
+    print(f"🔗 解析链接: {scheme}://***@***:***", flush=True)
+
+    try:
+        outbound = parse_link(link)
+    except Exception as e:
+        print(f"❌ 解析链接失败: {str(e)}", flush=True)
+        sys.exit(1)
+    
+    print(f"   协议: {outbound['type']}", flush=True)
+    print(f"   服务器: {mask_ip(outbound['server'])}:***", flush=True)
+
+    config = {
+        "log": {"level": "warn"},
+        "inbounds": [INBOUND],
+        "outbounds": [
+            outbound,
+            {"type": "direct", "tag": "direct"}
+        ],
+        "route": {
+            "rules": [
+                {"ip_is_private": True, "outbound": "direct"}
+            ]
+        }
+    }
+
+    try:
+        with open("config.json", "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        print("   配置已成功写入 config.json", flush=True)
+    except Exception as e:
+        print(f"❌ 写入 config.json 失败: {str(e)}", flush=True)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
